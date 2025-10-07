@@ -88,4 +88,8 @@ for i, record in enumerate(books):
         st.write(f"👤 {fields.get('author', 'Unknown')}")
         st.write(f"📊 Score: {fields.get('whitelist_score', 'N/A')} / 100")
         st.write(fields.get("whitelist_verdict", "No verdict"))
+
+        # ✅ FIXED: added block after "if"
         if "executive_summary" in fields:
+            with st.expander("📖 Summary"):
+                st.write(fields["executive_summary"])

@@ -1,5 +1,17 @@
 import streamlit as st
 from openai import OpenAI
+
+# Define variable so it never errors
+book_text = None
+
+# Load API key from Streamlit secrets
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("No API key found. Please add it in Streamlit Cloud → Settings → Secrets.")
+    st.stop()
+
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+import streamlit as st
+from openai import OpenAI
 from PyPDF2 import PdfReader
 import json
 

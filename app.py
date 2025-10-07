@@ -1,162 +1,68 @@
 import streamlit as st
 import requests
-import json
-from PyPDF2 import PdfReader
-from openai import OpenAI
 
 # ------------------------------------------------------------
 # ✅ Page Config
 # ------------------------------------------------------------
 st.set_page_config(page_title="Book Whitelist Marketplace", layout="wide")
-st.title("📚 Book Whitelist Marketplace")
-
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 AIRTABLE_BASE_ID = st.secrets["AIRTABLE_BASE_ID"]
 AIRTABLE_TABLE_ID = st.secrets["AIRTABLE_TABLE_ID"]
 AIRTABLE_API_KEY = st.secrets["AIRTABLE_API_KEY"]
 
 # ------------------------------------------------------------
-# ✅ Custom CSS for cards
+# ✅ Hero Section
 # ------------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    .card {
-        background-color: #ffffff;
-        border-radius: 15px;
-        padding: 20px;
-        margin: 15px 0;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-        transition: transform 0.2s ease;
-    }
-    .card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
-    }
-    .card h3 {
-        margin: 0 0 10px;
-        color: #333333;
-    }
-    .score {
-        font-weight: bold;
-        color: #007BFF;
-    }
-    .verdict {
-        font-weight: bold;
-        color: #28a745;
-    }
-    .verdict-bad {
-        font-weight: bold;
-        color: #dc3545;
-    }
-    .cover {
-        width: 100%;
-        border-radius: 10px;
-        margin-bottom: 12px;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# ------------------------------------------------------------
-# ✅ Airtable save function
-# ------------------------------------------------------------
-def save_to_airtable(fields):
-    url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
-    headers = {
-        "Authorization": f"Bearer {AIRTABLE_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    airtable_record = {
-        "fields": {
-            "title": fields.get("title", ""),
-            "executive_summary": fields.get("executive_summary", ""),
-            "language_complexity": fields.get("language_complexity", ""),
-            "whitelist_score": fields.get("whitelist_score", 0),
-            "whitelist_verdict": fields.get("whitelist_verdict", ""),
-            # Optional cover if available
-            "cover_url": fields.get("cover_url", ""),
-        }
-    }
-
-    r = requests.post(url, headers=headers, data=json.dumps(airtable_record))
-    if r.status_code == 200:
-        st.success("✅ Book saved to Airtable!")
-    else:
-        st.error(f"❌ Error saving to Airtable: {r.text}")
-
-
-# ------------------------------------------------------------
-# ✅ Upload Book
-# ------------------------------------------------------------
-uploaded_file = st.file_uploader("📤 Upload a book (PDF or TXT)", type=["pdf", "txt"])
-
-book_text = None
-if uploaded_file:
-    if uploaded_file.type == "application/pdf":
-        reader = PdfReader(uploaded_file)
-        book_text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
-    else:
-        book_text = uploaded_file.read().decode("utf-8")
-    st.success("📖 Book uploaded successfully.")
-
-
-# ------------------------------------------------------------
-# ✅ Evaluation Prompt
-# ------------------------------------------------------------
-evaluation_prompt = """
-You are a content and literacy evaluator for the UAE Ministry of Education.
-You will evaluate a children's or family book based on its content, complexity, and cultural ethics.
-
-Return a detailed JSON with these fields:
-{
-  "title": "Book Title",
-  "executive_summary": "Concise overview of the story, its themes, and tone.",
-  "language_complexity": "Low / Moderate / High",
-  "whitelist_score": 0-100,
-  "whitelist_verdict": "✅ Whitelisted – Safe for general use OR 🚫 Not Whitelisted – Requires Review",
-  "cover_url": "https://example.com/cover.jpg"
+st.markdown("""
+<style>
+.hero {
+  background: linear-gradient(135deg, #007BFF 0%, #00C9A7 100%);
+  color: white;
+  padding: 60px 30px;
+  border-radius: 15px;
+  text-align: center;
+  margin-bottom: 40px;
 }
-"""
+.hero h1 {
+  font-size: 48px;
+  margin-bottom: 10px;
+}
+.hero p {
+  font-size: 20px;
+  margin-bottom: 20px;
+}
+.hero .btn {
+  display: inline-block;
+  margin: 0 10px;
+  padding: 12px 24px;
+  border-radius: 8px;
+  background: white;
+  color: #007BFF;
+  font-weight: bold;
+  text-decoration: none;
+}
+.hero .btn.green {
+  background: #28a745;
+  color: white;
+}
+.hero .btn.purple {
+  background: #6f42c1;
+  color: white;
+}
+</style>
 
+<div class="hero">
+  <h1>Protecting Young Minds</h1>
+  <p>Over 1,000 children’s books reviewed for Islamic values, UAE culture, and educational quality</p>
+  <a href="#books" class="btn">📚 Browse Books</a>
+  <a href="#upload" class="btn green">➕ Add Book</a>
+  <a href="#ai" class="btn purple">🤖 AI Assessment</a>
+</div>
+""", unsafe_allow_html=True)
 
 # ------------------------------------------------------------
-# ✅ Run Evaluation
+# ✅ Fetch from Airtable
 # ------------------------------------------------------------
-if book_text:
-    if st.button("Run Evaluation"):
-        with st.spinner("Evaluating book..."):
-            response = client.responses.create(
-                model="gpt-4.1",
-                input=evaluation_prompt + "\n\nBOOK TEXT:\n" + book_text,
-                temperature=0.3
-            )
-
-            output = response.output[0].content[0].text
-
-            try:
-                results = json.loads(output)
-            except:
-                start, end = output.find("{"), output.rfind("}") + 1
-                results = json.loads(output[start:end])
-
-            # ✅ Show results
-            st.subheader("Evaluation Results")
-            st.json(results)
-
-            # ✅ Save to Airtable
-            if st.button("Approve & Save Book"):
-                save_to_airtable(results)
-
-
-# ------------------------------------------------------------
-# ✅ Show Books from Airtable (as cards)
-# ------------------------------------------------------------
-st.subheader("📚 Approved Books Catalog")
-
 def fetch_books():
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
     headers = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
@@ -169,20 +75,114 @@ def fetch_books():
 
 books = fetch_books()
 
-cols = st.columns(3)
-for i, record in enumerate(books):
-    fields = record["fields"]
-    with cols[i % 3]:
-        cover = fields.get("cover_url", None)
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        if cover:
-            st.image(cover, use_column_width=True)
-        st.markdown(f"<h3>{fields.get('title', 'Untitled')}</h3>", unsafe_allow_html=True)
-        st.write(fields.get("executive_summary", ""))
-        st.markdown(f"<p class='score'>Score: {fields.get('whitelist_score', 'N/A')}</p>", unsafe_allow_html=True)
+# ------------------------------------------------------------
+# ✅ Book Detail Page (Secondary View)
+# ------------------------------------------------------------
+if "page" not in st.session_state:
+    st.session_state.page = "catalog"
+if "selected_book" not in st.session_state:
+    st.session_state.selected_book = None
+
+if st.session_state.page == "detail" and st.session_state.selected_book:
+    book = st.session_state.selected_book
+    fields = book.get("fields", {})
+
+    st.markdown("### 📖 Book Detail")
+    st.image(fields.get("cover_url", ""), width=300)
+    st.title(fields.get("title", "Untitled"))
+    st.write(f"**Score:** {fields.get('whitelist_score', 'N/A')}")
+    st.write(f"**Verdict:** {fields.get('whitelist_verdict', 'N/A')}")
+    st.write(f"**Language Complexity:** {fields.get('language_complexity', 'N/A')}")
+
+    st.subheader("📝 Executive Summary")
+    st.write(fields.get("executive_summary", "N/A"))
+
+    if st.button("⬅ Back to Catalog"):
+        st.session_state.page = "catalog"
+        st.experimental_rerun()
+
+else:
+    # ------------------------------------------------------------
+    # ✅ Catalog Section
+    # ------------------------------------------------------------
+    st.markdown("## 📚 Approved Books Catalog", unsafe_allow_html=True)
+
+    # CSS for grid layout
+    st.markdown("""
+    <style>
+    .card-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .card {
+      flex: 1 1 calc(30% - 20px);
+      background: #fff;
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0px 4px 12px rgba(0,0,0,0.08);
+      min-width: 280px;
+      max-width: 350px;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0px 8px 16px rgba(0,0,0,0.12);
+    }
+    .card img {
+      width: 100%;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    .card h3 {
+      margin: 0;
+      color: #222;
+    }
+    .card p {
+      margin: 5px 0;
+      color: #555;
+    }
+    .score {
+      font-weight: bold;
+      color: #007BFF;
+    }
+    .verdict {
+      font-weight: bold;
+      color: #28a745;
+    }
+    .verdict-bad {
+      font-weight: bold;
+      color: #dc3545;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Render grid
+    st.markdown('<div class="card-grid">', unsafe_allow_html=True)
+    for record in books:
+        fields = record.get("fields", {})
+        title = fields.get("title", "Untitled")
+        summary = fields.get("executive_summary", "")
+        score = fields.get("whitelist_score", "N/A")
         verdict = fields.get("whitelist_verdict", "N/A")
-        if "✅" in verdict:
-            st.markdown(f"<p class='verdict'>{verdict}</p>", unsafe_allow_html=True)
-        else:
-            st.markdown(f"<p class='verdict-bad'>{verdict}</p>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        cover = fields.get("cover_url", None)
+
+        card_html = f"""
+        <div class="card" onclick="window.location.reload()">
+            {'<img src="'+cover+'" />' if cover else ''}
+            <h3>{title}</h3>
+            <p>{summary[:120]}...</p>
+            <p class="score">Score: {score}</p>
+            <p class='{"verdict" if "✅" in verdict else "verdict-bad"}'>{verdict}</p>
+        </div>
+        """
+        st.markdown(card_html, unsafe_allow_html=True)
+
+        # Make card clickable using Streamlit button
+        if st.button(f"View {title}"):
+            st.session_state.page = "detail"
+            st.session_state.selected_book = record
+            st.experimental_rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)

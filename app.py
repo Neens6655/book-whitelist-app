@@ -1,83 +1,41 @@
-# ------------------------------------------------------------
-# ✅ Helper Functions (define BEFORE evaluation block)
-# ------------------------------------------------------------
-def penalty(domain_value):
-    text = str(domain_value).lower()
-    if "moderate" in text: 
-        return 15
-    if "high" in text or "severe" in text: 
-        return 30
-    return 0
+import streamlit as st
+from openai import OpenAI
+from PyPDF2 import PdfReader
+import json
 
-def build_report(results: dict) -> str:
-    lines = []
-    lines.append(f"📚 Title: {results.get('title','Unknown')}")
-    lines.append(f"📊 Score: {results.get('whitelist_score','N/A')} / 100")
-    lines.append(f"Verdict: {results.get('whitelist_verdict','N/A')}\n")
-    return "\n".join(lines)
+# --- App config ---
+st.set_page_config(page_title="Book Whitelist Evaluator", layout="wide")
+st.title("📚 Book Evaluation & Whitelist Report")
 
-# ------------------------------------------------------------
-# ✅ STEP 4–7 — Run OpenAI Evaluation
-# ------------------------------------------------------------
-if book_text is not None:   # prevent NameError if no upload
-    if st.button("Run Evaluation"):
-        with st.spinner("Evaluating book..."):
-            response = client.responses.create(
-                model="gpt-4o-mini",  # stable model
-                input=evaluation_prompt + "\n\nBOOK TEXT:\n" + book_text,
-                temperature=0.3
-            )
-            output = response.output[0].content[0].text
+# --- API key ---
+if "OPENAI_API_KEY" not in st.secrets:
+    st.error("Missing OPENAI_API_KEY in Streamlit Secrets.")
+    st.stop()
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-            try:
-                results = json.loads(output)
-            except Exception:
-                start, end = output.find("{"), output.rfind("}")+1
-                results = json.loads(output[start:end])
+# --- Upload handling ---
+book_text = None   # 👈 define it here so it's never undefined
+uploaded_file = st.file_uploader("Upload a PDF or TXT book", type=["pdf","txt"])
 
-            # Whitelist scoring
-            whitelist_score = 100
-            for v in results.get("domains", {}).values():
-                whitelist_score -= penalty(v)
+def load_book(file):
+    if file.name.lower().endswith(".pdf"):
+        reader = PdfReader(file)
+        text = "".join([page.extract_text() or "" for page in reader.pages])
+    else:
+        text = file.read().decode("utf-8", errors="ignore")
+    return text[:18000]
 
-            lc = results.get("language_complexity", "").lower()
-            if "high" in lc: whitelist_score -= 15
-            elif "moderate" in lc: whitelist_score -= 5
+if uploaded_file:
+    book_text = load_book(uploaded_file)
+    st.success(f"✅ Loaded {len(book_text)} characters from {uploaded_file.name}")
 
-            verdict = "✅ Whitelisted – Safe" if whitelist_score >= 70 else "🚫 Requires Review"
-            results["whitelist_score"], results["whitelist_verdict"] = whitelist_score, verdict
-
-            # Display
-            st.subheader("📊 Whitelist Report")
-            st.metric("Score", f"{whitelist_score}/100")
-            st.write(f"Verdict: {verdict}")
-
-            st.subheader("📝 Executive Summary")
-            st.write(results.get("executive_summary","N/A"))
-
-            st.subheader("🎓 Language Complexity")
-            st.write(results.get("language_complexity","N/A"))
-
-            st.subheader("🌟 Lessons Learned")
-            st.write(results.get("lessons_learned","N/A"))
-
-            st.subheader("👨‍👩‍👧 Parent Discussion Guide")
-            st.json(results.get("parent_discussion_guide", {}))
-
-            st.subheader("🎯 Age Recommendations")
-            st.json(results.get("age_verdicts", {}))
-
-            st.subheader("🔑 Key Drivers")
-            st.write(results.get("key_drivers", []))
-
-            # Download
-            st.download_button("⬇️ Download JSON",
-                data=json.dumps(results, ensure_ascii=False, indent=2),
-                file_name="evaluation_result.json"
-            )
-            st.download_button("⬇️ Download Report (TXT)",
-                data=build_report(results),
-                file_name="executive_report.txt"
-            )
-else:
-    st.info("📥 Please upload a PDF or TXT file to start.")
+# --- Only run evaluation if we have text ---
+if book_text and st.button("Run Evaluation"):
+    with st.spinner("Evaluating book..."):
+        response = client.responses.create(
+            model="gpt-4o-mini",
+            input="...prompt..." + "\n\nBOOK TEXT:\n" + book_text,
+            temperature=0.3
+        )
+        output = response.output[0].content[0].text
+        # continue with JSON parsing, scoring, display...

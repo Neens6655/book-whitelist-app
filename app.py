@@ -5,7 +5,7 @@ from PyPDF2 import PdfReader
 from openai import OpenAI
 
 # ------------------------------------------------------------
-# ✅ Setup
+# ✅ Page Config
 # ------------------------------------------------------------
 st.set_page_config(page_title="Book Whitelist Marketplace", layout="wide")
 st.title("📚 Book Whitelist Marketplace")
@@ -17,7 +17,51 @@ AIRTABLE_TABLE_ID = st.secrets["AIRTABLE_TABLE_ID"]
 AIRTABLE_API_KEY = st.secrets["AIRTABLE_API_KEY"]
 
 # ------------------------------------------------------------
-# ✅ Airtable save function (simple version: only 5 fields)
+# ✅ Custom CSS for cards
+# ------------------------------------------------------------
+st.markdown(
+    """
+    <style>
+    .card {
+        background-color: #ffffff;
+        border-radius: 15px;
+        padding: 20px;
+        margin: 15px 0;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        transition: transform 0.2s ease;
+    }
+    .card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+    }
+    .card h3 {
+        margin: 0 0 10px;
+        color: #333333;
+    }
+    .score {
+        font-weight: bold;
+        color: #007BFF;
+    }
+    .verdict {
+        font-weight: bold;
+        color: #28a745;
+    }
+    .verdict-bad {
+        font-weight: bold;
+        color: #dc3545;
+    }
+    .cover {
+        width: 100%;
+        border-radius: 10px;
+        margin-bottom: 12px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# ------------------------------------------------------------
+# ✅ Airtable save function
 # ------------------------------------------------------------
 def save_to_airtable(fields):
     url = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
@@ -33,6 +77,8 @@ def save_to_airtable(fields):
             "language_complexity": fields.get("language_complexity", ""),
             "whitelist_score": fields.get("whitelist_score", 0),
             "whitelist_verdict": fields.get("whitelist_verdict", ""),
+            # Optional cover if available
+            "cover_url": fields.get("cover_url", ""),
         }
     }
 
@@ -46,7 +92,7 @@ def save_to_airtable(fields):
 # ------------------------------------------------------------
 # ✅ Upload Book
 # ------------------------------------------------------------
-uploaded_file = st.file_uploader("Upload a book (PDF or TXT)", type=["pdf", "txt"])
+uploaded_file = st.file_uploader("📤 Upload a book (PDF or TXT)", type=["pdf", "txt"])
 
 book_text = None
 if uploaded_file:
@@ -71,7 +117,8 @@ Return a detailed JSON with these fields:
   "executive_summary": "Concise overview of the story, its themes, and tone.",
   "language_complexity": "Low / Moderate / High",
   "whitelist_score": 0-100,
-  "whitelist_verdict": "✅ Whitelisted – Safe for general use OR 🚫 Not Whitelisted – Requires Review"
+  "whitelist_verdict": "✅ Whitelisted – Safe for general use OR 🚫 Not Whitelisted – Requires Review",
+  "cover_url": "https://example.com/cover.jpg"
 }
 """
 
@@ -106,7 +153,7 @@ if book_text:
 
 
 # ------------------------------------------------------------
-# ✅ Show Books from Airtable
+# ✅ Show Books from Airtable (as cards)
 # ------------------------------------------------------------
 st.subheader("📚 Approved Books Catalog")
 
@@ -126,8 +173,16 @@ cols = st.columns(3)
 for i, record in enumerate(books):
     fields = record["fields"]
     with cols[i % 3]:
-        st.markdown(f"### {fields.get('title', 'Untitled')}")
+        cover = fields.get("cover_url", None)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        if cover:
+            st.image(cover, use_column_width=True)
+        st.markdown(f"<h3>{fields.get('title', 'Untitled')}</h3>", unsafe_allow_html=True)
         st.write(fields.get("executive_summary", ""))
-        st.write(f"**Language Complexity:** {fields.get('language_complexity', 'N/A')}")
-        st.write(f"**Score:** {fields.get('whitelist_score', 'N/A')}")
-        st.write(f"**Verdict:** {fields.get('whitelist_verdict', 'N/A')}")
+        st.markdown(f"<p class='score'>Score: {fields.get('whitelist_score', 'N/A')}</p>", unsafe_allow_html=True)
+        verdict = fields.get("whitelist_verdict", "N/A")
+        if "✅" in verdict:
+            st.markdown(f"<p class='verdict'>{verdict}</p>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<p class='verdict-bad'>{verdict}</p>", unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)

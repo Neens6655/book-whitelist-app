@@ -133,3 +133,55 @@ if book_text:
 
             except Exception as e:
                 st.error(f"❌ Error during evaluation: {str(e)}")
+
+# ------------------------------------------------------------
+# ✅ Display Human-Readable Report
+# ------------------------------------------------------------
+st.subheader("📖 Human-Readable Report")
+
+report = f"""
+📚 **Book Title:** {results.get('title', 'Unknown')}
+
+📊 **Whitelist Score:** {results.get('whitelist_score', 'N/A')} / 100  
+**Verdict:** {results.get('whitelist_verdict', 'N/A')}
+
+---
+
+📝 **Executive Summary**  
+{results.get('executive_summary', 'No summary available.')}
+
+---
+
+🎓 **Language Complexity**  
+{results.get('language_complexity', 'N/A')}
+
+---
+
+🌟 **Lessons Learned**  
+{results.get('lessons_learned', 'No lessons found.')}
+
+---
+
+👨‍👩‍👧 **Parent Discussion Guide**
+
+**Before Reading:**  
+- {"\n- ".join(results['parent_discussion_guide'].get('before_reading', []))}
+
+**After Reading:**  
+- {"\n- ".join(results['parent_discussion_guide'].get('after_reading', []))}
+
+---
+
+🎯 **Age Recommendations**  
+Recommended Minimum Age: {results.get('recommended_minimum_age', 'N/A')}
+
+{chr(10).join([f"{age}: {verdict}" for age, verdict in results['age_verdicts'].items()])}
+
+---
+
+🔑 **Key Drivers**  
+- {"\n- ".join(results.get('key_drivers', []))}
+"""
+
+st.markdown(report)
+

@@ -1,187 +1,96 @@
-# 📚 Book Evaluation & Whitelist Report (Streamlit Version)
-# ------------------------------------------------------------
-# Mirrors your Colab logic but with an upload UI
-
 import streamlit as st
-from openai import OpenAI
-from PyPDF2 import PdfReader
-import json
-import os
+import requests
 
-# ------------------------------------------------------------
-# ✅ Setup OpenAI client (reads key from Streamlit secrets)
-# ------------------------------------------------------------
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# Load secrets
+AIRTABLE_API_KEY = st.secrets["AIRTABLE_API_KEY"]
+BASE_ID = st.secrets["BASE_ID"]
+TABLE_NAME = st.secrets["TABLE_NAME"]
 
-st.set_page_config(page_title="Book Whitelist Evaluator", layout="wide")
-st.title("📚 UAE Book Whitelist Evaluator")
-st.write("Upload a book file (PDF or TXT), run evaluation, and see whitelist scoring.")
+# Airtable endpoint
+AIRTABLE_URL = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_NAME}"
+HEADERS = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
 
-# ------------------------------------------------------------
-# ✅ Upload book
-# ------------------------------------------------------------
-uploaded_file = st.file_uploader("Upload a book (PDF or TXT)", type=["pdf", "txt"])
-book_text = None
+st.set_page_config(page_title="📚 Book Whitelist Library", layout="wide")
+st.title("📚 Book Whitelist Marketplace")
 
-if uploaded_file:
-    if uploaded_file.type == "application/pdf":
-        reader = PdfReader(uploaded_file)
-        book_text = "\n".join(page.extract_text() for page in reader.pages if page.extract_text())
+# -----------------------------
+# Helper functions
+# -----------------------------
+
+def get_books():
+    response = requests.get(AIRTABLE_URL, headers=HEADERS)
+    if response.status_code == 200:
+        return response.json()["records"]
     else:
-        book_text = uploaded_file.read().decode("utf-8")
+        st.error(f"Error fetching books: {response.text}")
+        return []
 
-    st.success("📖 Book uploaded successfully.")
+def add_book(title, author, summary, score, verdict, approved=False):
+    data = {
+        "fields": {
+            "Title": title,
+            "Author": author,
+            "Summary": summary,
+            "Whitelist Score": score,
+            "Verdict": verdict,
+            "Approved": approved
+        }
+    }
+    response = requests.post(AIRTABLE_URL, headers=HEADERS, json=data)
+    if response.status_code == 200:
+        st.success("✅ Book added successfully!")
+    else:
+        st.error(f"❌ Error adding book: {response.text}")
 
-# ------------------------------------------------------------
-# ✅ Evaluation Prompt
-# ------------------------------------------------------------
-evaluation_prompt = """
-You are a content and literacy evaluator for the UAE Ministry of Education.
-You will evaluate a children's or family book based on its content, complexity, and cultural ethics.
+def update_book(record_id, fields):
+    url = f"{AIRTABLE_URL}/{record_id}"
+    data = {"fields": fields}
+    response = requests.patch(url, headers=HEADERS, json=data)
+    if response.status_code == 200:
+        st.success("✅ Book updated!")
+    else:
+        st.error(f"❌ Error updating book: {response.text}")
 
-Return a detailed JSON with these fields:
+# -----------------------------
+# Upload new book form
+# -----------------------------
+st.subheader("➕ Add a New Book")
+with st.form("book_form"):
+    title = st.text_input("Book Title")
+    author = st.text_input("Author")
+    summary = st.text_area("Summary")
+    score = st.slider("Whitelist Score", 0, 100, 50)
+    verdict = st.selectbox("Verdict", ["✅ Whitelisted – Safe", "❌ Not Approved"])
+    approved = st.checkbox("Approve this book")
+    submitted = st.form_submit_button("Add Book")
+    if submitted:
+        add_book(title, author, summary, score, verdict, approved)
 
-{
-  "title": "Book Title",
-  "executive_summary": "...",
-  "language_complexity": "Low / Moderate / High",
-  "domains": {
-    "gambling": "...",
-    "language": "...",
-    "violence_&_terror": "...",
-    "alcohol_drugs_smoking": "...",
-    "sex_&_nudity": "...",
-    "islamic_arab_uae_cultural_ethics": "..."
-  },
-  "lessons_learned": "...",
-  "parent_discussion_guide": {
-    "before_reading": ["..."],
-    "after_reading": ["..."]
-  },
-  "age_verdicts": {
-    "0-3": "",
-    "3-5": "",
-    "6-9": "",
-    "10-12": "",
-    "13-16": "",
-    "17+": "",
-    "21+": ""
-  },
-  "recommended_minimum_age": "One group only (e.g., '6-9')",
-  "key_drivers": ["..."]
-}
-"""
+# -----------------------------
+# Display all approved books
+# -----------------------------
+st.subheader("📖 Approved Books Catalog")
+books = get_books()
 
-# ------------------------------------------------------------
-# ✅ Run Evaluation Button
-# ------------------------------------------------------------
-if book_text:
-    if st.button("Run Evaluation"):
-        with st.spinner("Evaluating book... this may take a moment..."):
-            try:
-                response = client.responses.create(
-                    model="gpt-4.1",
-                    input=evaluation_prompt + "\n\nBOOK TEXT:\n" + book_text[:18000],
-                    temperature=0.3
-                )
+cols = st.columns(3)
+i = 0
+for book in books:
+    fields = book["fields"]
+    if fields.get("Approved"):
+        with cols[i % 3]:
+            st.markdown(f"### {fields.get('Title', 'Untitled')}")
+            st.write(f"👤 {fields.get('Author', 'Unknown')}")
+            st.write(f"📊 Score: {fields.get('Whitelist Score', 0)} / 100")
+            st.write(f"📝 {fields.get('Verdict', '')}")
+            st.caption(fields.get("Summary", ""))
 
-                output = response.output[0].content[0].text
+            # Show cover if exists
+            if "Cover" in fields:
+                img_url = fields["Cover"][0]["url"]
+                st.image(img_url, use_container_width=True)
 
-                try:
-                    results = json.loads(output)
-                except Exception:
-                    start, end = output.find("{"), output.rfind("}") + 1
-                    results = json.loads(output[start:end])
+            # Button to unapprove
+            if st.button(f"Unapprove {fields.get('Title')}", key=book["id"]):
+                update_book(book["id"], {"Approved": False})
 
-                # Whitelist scoring
-                whitelist_score = 100
-                domains = results.get("domains", {})
-
-                def penalty(domain_value):
-                    text = str(domain_value).lower()
-                    if "moderate" in text: return 15
-                    if "high" in text or "severe" in text: return 30
-                    return 0
-
-                for v in domains.values():
-                    whitelist_score -= penalty(v)
-
-                language_complexity = results.get("language_complexity", "").lower()
-                if "high" in language_complexity:
-                    whitelist_score -= 15
-                elif "moderate" in language_complexity:
-                    whitelist_score -= 5
-
-                whitelist_verdict = (
-                    "✅ Whitelisted – Safe for general use" if whitelist_score >= 70
-                    else "🚫 Not Whitelisted – Requires Review"
-                )
-
-                results["whitelist_score"] = whitelist_score
-                results["whitelist_verdict"] = whitelist_verdict
-
-                # ------------------------------------------------------------
-                # ✅ Display Results
-                # ------------------------------------------------------------
-                st.subheader("📊 Evaluation Results")
-                st.json(results)
-
-                st.markdown(f"### Whitelist Score: **{whitelist_score} / 100**")
-                st.markdown(f"### Verdict: **{whitelist_verdict}**")
-
-                st.download_button("⬇️ Download JSON Results", data=json.dumps(results, indent=2), file_name="evaluation_result.json")
-
-            except Exception as e:
-                st.error(f"❌ Error during evaluation: {str(e)}")
-
-# ------------------------------------------------------------
-# ✅ Display Human-Readable Report
-# ------------------------------------------------------------
-st.subheader("📖 Human-Readable Report")
-
-report = f"""
-📚 **Book Title:** {results.get('title', 'Unknown')}
-
-📊 **Whitelist Score:** {results.get('whitelist_score', 'N/A')} / 100  
-**Verdict:** {results.get('whitelist_verdict', 'N/A')}
-
----
-
-📝 **Executive Summary**  
-{results.get('executive_summary', 'No summary available.')}
-
----
-
-🎓 **Language Complexity**  
-{results.get('language_complexity', 'N/A')}
-
----
-
-🌟 **Lessons Learned**  
-{results.get('lessons_learned', 'No lessons found.')}
-
----
-
-👨‍👩‍👧 **Parent Discussion Guide**
-
-**Before Reading:**  
-- {"\n- ".join(results['parent_discussion_guide'].get('before_reading', []))}
-
-**After Reading:**  
-- {"\n- ".join(results['parent_discussion_guide'].get('after_reading', []))}
-
----
-
-🎯 **Age Recommendations**  
-Recommended Minimum Age: {results.get('recommended_minimum_age', 'N/A')}
-
-{chr(10).join([f"{age}: {verdict}" for age, verdict in results['age_verdicts'].items()])}
-
----
-
-🔑 **Key Drivers**  
-- {"\n- ".join(results.get('key_drivers', []))}
-"""
-
-st.markdown(report)
-
+        i += 1

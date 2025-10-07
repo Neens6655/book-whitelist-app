@@ -1,96 +1,91 @@
 import streamlit as st
+import json
 import requests
+import os
+from PyPDF2 import PdfReader
 
-# Load secrets
-AIRTABLE_API_KEY = st.secrets["AIRTABLE_API_KEY"]
-BASE_ID = st.secrets["BASE_ID"]
-TABLE_NAME = st.secrets["TABLE_NAME"]
-
-# Airtable endpoint
-AIRTABLE_URL = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_NAME}"
-HEADERS = {"Authorization": f"Bearer {AIRTABLE_API_KEY}"}
-
-st.set_page_config(page_title="📚 Book Whitelist Library", layout="wide")
+# ------------------------------------------------------------
+# ✅ App Config
+# ------------------------------------------------------------
+st.set_page_config(page_title="Book Whitelist Marketplace", layout="wide")
 st.title("📚 Book Whitelist Marketplace")
 
-# -----------------------------
-# Helper functions
-# -----------------------------
+# Airtable credentials (from Streamlit secrets)
+AIRTABLE_API_KEY = st.secrets["AIRTABLE_API_KEY"]
+AIRTABLE_BASE_ID = st.secrets["AIRTABLE_BASE_ID"]
+AIRTABLE_TABLE_ID = st.secrets["AIRTABLE_TABLE_ID"]
 
-def get_books():
-    response = requests.get(AIRTABLE_URL, headers=HEADERS)
-    if response.status_code == 200:
-        return response.json()["records"]
+AIRTABLE_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_ID}"
+HEADERS = {"Authorization": f"Bearer {AIRTABLE_API_KEY}", "Content-Type": "application/json"}
+
+# ------------------------------------------------------------
+# ✅ Upload Book Feature
+# ------------------------------------------------------------
+st.subheader("📤 Upload a New Book")
+
+uploaded_file = st.file_uploader("Upload a book (PDF or TXT)", type=["pdf", "txt"])
+book_text = None
+
+if uploaded_file:
+    if uploaded_file.type == "application/pdf":
+        reader = PdfReader(uploaded_file)
+        book_text = ""
+        for page in reader.pages:
+            book_text += page.extract_text() or ""
     else:
-        st.error(f"Error fetching books: {response.text}")
+        book_text = uploaded_file.read().decode("utf-8")
+
+    st.success("✅ Book uploaded successfully!")
+
+# ------------------------------------------------------------
+# ✅ Run Evaluation (mock for now)
+# ------------------------------------------------------------
+if book_text:
+    if st.button("Run AI Evaluation"):
+        st.info("⚡ Running evaluation... please wait")
+
+        # 🔹 Mock evaluation (replace later with OpenAI call)
+        results = {
+            "title": uploaded_file.name,
+            "author": "Unknown Author",
+            "executive_summary": book_text[:300] + "...",
+            "whitelist_score": 85,
+            "whitelist_verdict": "✅ Whitelisted – Safe for general use"
+        }
+
+        # Save to Airtable
+        payload = {"fields": results}
+        r = requests.post(AIRTABLE_URL, headers=HEADERS, data=json.dumps(payload))
+
+        if r.status_code == 200:
+            st.success("📊 Book evaluation saved to Airtable!")
+        else:
+            st.error(f"❌ Error saving to Airtable: {r.text}")
+
+        st.subheader("📖 Evaluation Results")
+        st.json(results)
+
+# ------------------------------------------------------------
+# ✅ Display Approved Books Catalog
+# ------------------------------------------------------------
+st.subheader("📚 Approved Books Catalog")
+
+def fetch_books():
+    r = requests.get(AIRTABLE_URL, headers=HEADERS)
+    if r.status_code == 200:
+        return r.json().get("records", [])
+    else:
+        st.error(f"❌ Error fetching books: {r.text}")
         return []
 
-def add_book(title, author, summary, score, verdict, approved=False):
-    data = {
-        "fields": {
-            "Title": title,
-            "Author": author,
-            "Summary": summary,
-            "Whitelist Score": score,
-            "Verdict": verdict,
-            "Approved": approved
-        }
-    }
-    response = requests.post(AIRTABLE_URL, headers=HEADERS, json=data)
-    if response.status_code == 200:
-        st.success("✅ Book added successfully!")
-    else:
-        st.error(f"❌ Error adding book: {response.text}")
+books = fetch_books()
 
-def update_book(record_id, fields):
-    url = f"{AIRTABLE_URL}/{record_id}"
-    data = {"fields": fields}
-    response = requests.patch(url, headers=HEADERS, json=data)
-    if response.status_code == 200:
-        st.success("✅ Book updated!")
-    else:
-        st.error(f"❌ Error updating book: {response.text}")
-
-# -----------------------------
-# Upload new book form
-# -----------------------------
-st.subheader("➕ Add a New Book")
-with st.form("book_form"):
-    title = st.text_input("Book Title")
-    author = st.text_input("Author")
-    summary = st.text_area("Summary")
-    score = st.slider("Whitelist Score", 0, 100, 50)
-    verdict = st.selectbox("Verdict", ["✅ Whitelisted – Safe", "❌ Not Approved"])
-    approved = st.checkbox("Approve this book")
-    submitted = st.form_submit_button("Add Book")
-    if submitted:
-        add_book(title, author, summary, score, verdict, approved)
-
-# -----------------------------
-# Display all approved books
-# -----------------------------
-st.subheader("📖 Approved Books Catalog")
-books = get_books()
-
-cols = st.columns(3)
-i = 0
-for book in books:
-    fields = book["fields"]
-    if fields.get("Approved"):
-        with cols[i % 3]:
-            st.markdown(f"### {fields.get('Title', 'Untitled')}")
-            st.write(f"👤 {fields.get('Author', 'Unknown')}")
-            st.write(f"📊 Score: {fields.get('Whitelist Score', 0)} / 100")
-            st.write(f"📝 {fields.get('Verdict', '')}")
-            st.caption(fields.get("Summary", ""))
-
-            # Show cover if exists
-            if "Cover" in fields:
-                img_url = fields["Cover"][0]["url"]
-                st.image(img_url, use_container_width=True)
-
-            # Button to unapprove
-            if st.button(f"Unapprove {fields.get('Title')}", key=book["id"]):
-                update_book(book["id"], {"Approved": False})
-
-        i += 1
+cols = st.columns(3)  # Display in 3 columns
+for i, record in enumerate(books):
+    fields = record.get("fields", {})
+    with cols[i % 3]:
+        st.markdown(f"### {fields.get('title', 'Untitled')}")
+        st.write(f"👤 {fields.get('author', 'Unknown')}")
+        st.write(f"📊 Score: {fields.get('whitelist_score', 'N/A')} / 100")
+        st.write(fields.get("whitelist_verdict", "No verdict"))
+        if "executive_summary" in fields:
